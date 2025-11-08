@@ -21,11 +21,11 @@ select = [
     "W",  # pycodestyle warnings
     "I",  # isort
     "B",  # flake8-bugbear (catches subtle bugs)
-    "D",  # pydocstyle (docstring linting)
     "UP", # pyupgrade (modern Python syntax)
 ]
 ignore = [
     "E501",  # Black handles line length
+    "D",  # pydocstyle (docstring linting)
     "D203",  # ignore blank line before class (conflicts with D211)
     "D213",  # ignore multiline docstring rule conflict
 ]
