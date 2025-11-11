@@ -4,7 +4,6 @@ import os
 import unicodedata
 from abc import ABC, abstractmethod
 
-
 class BaseTokenizer(ABC):
     """Abstract Base class for Tokenizers."""
 

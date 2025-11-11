@@ -1,4 +1,4 @@
-"""Basic Tokenizer implementations."""
+"""Basic Tokenizer implementation."""
 
 from minbpe.base_tokenizer import BaseTokenizer
 
@@ -7,7 +7,7 @@ class BasicTokenizer(BaseTokenizer):
     def __init__(self):
         super().__init__()
 
-    # traim method to learn merges and vocab from text
+    # train method to learn merges and vocab from text
     def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
         if vocab_size < 256:
             raise ValueError(f"vocab_size must be at least 256, got {vocab_size}")
@@ -25,7 +25,18 @@ class BasicTokenizer(BaseTokenizer):
             # count up the number of times every consecutive pair appears
             stats: dict[tuple[int, int], int] = self._get_stats(ids)
             # find the pair with the highest count
-            pair: tuple[int, int] = max(stats, key=stats.get)
+            most_frequent_pair: tuple[int, int] = None
+            highest_count: int = -1
+            for pair, count in stats.items():
+                if count > highest_count:
+                    highest_count = count
+                    most_frequent_pair = pair
+            pair: tuple[int, int] = most_frequent_pair
+            if highest_count == 0:
+                # no more pairs can be merged
+                if verbose:
+                    print(f"No more pairs can be merged at iteration {i}. Stopping early.")
+                break
             # mint a new token: assign it the next available id
             idx: int = 256 + i
             # replace all occurrences of pair in ids with idx
@@ -56,18 +67,37 @@ class BasicTokenizer(BaseTokenizer):
     def encode(self, text: str) -> list[int]:
         # given a string text, return the token ids
         text_bytes: bytes = text.encode("utf-8", errors="strict") # raw bytes
-        ids = list(text_bytes) # list of integers in range 0..255
+        ids: list[int] = list(text_bytes) # list of integers in range 0..255
         while len(ids) >= 2:
             # find the pair with the lowest merge index
+            # get frequency stats of all adjacent pairs
             stats: dict[tuple[int, int], int] = self._get_stats(ids)
-            pair: tuple[int, int] = min(stats, key=lambda p: self.merges.get(p, float("inf")))
+            # collect all current pairs ---
+            pairs_list: list[tuple[int, int]] = list(stats.keys())
+            # assign each pair its merge priority ---
+            pair_priorities: dict[tuple[int, int], float | int] = {}
+            for p in pairs_list:
+                if p in self.merges:
+                    pair_priorities[p] = self.merges[p]
+                else:
+                    pair_priorities[p] = float("inf")
+            # initialize variables to track the best pair and its smallest priority
+            best_pair: tuple[int, int] = None
+            best_priority: float | int = float("inf")
+            # find the pair with the smallest merge index ---
+            for p in pair_priorities:
+                priority: float | int = pair_priorities[p]
+                if priority < best_priority:
+                    best_priority = priority
+                    best_pair = p
+            final_per: tuple[int, int] = best_pair
             # subtle: if there are no more merges available, the key will
             # result in an inf for every single pair, and the min will be
             # just the first pair in the list, arbitrarily
             # we can detect this terminating case by a membership check
-            if pair not in self.merges:
+            if final_per not in self.merges:
                 break # nothing else can be merged anymore
             # otherwise let's merge the best pair (lowest merge index)
-            idx: int = self.merges[pair]
-            ids: list[int] = self._merge(ids, pair, idx)
+            idx: int = self.merges[final_per]
+            ids: list[int] = self._merge(ids, final_per, idx)
         return ids
