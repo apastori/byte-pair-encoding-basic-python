@@ -100,7 +100,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
 
         # save class variables
-        self.merges = merges # used in encode()
+        self.token_merges = merges # used in encode()
         self.vocab = vocab   # used in decode()
 
     def register_special_tokens(self, special_tokens: dict[str, int]) -> None:
@@ -155,8 +155,8 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
             # assign each pair its merge priority ---
             pair_priorities: dict[tuple[int, int], float | int] = {}
             for p in pairs_list:
-                if p in self.merges:
-                    pair_priorities[p] = self.merges[p]
+                if p in self.token_merges:
+                    pair_priorities[p] = self.token_merges[p]
                 else:
                     pair_priorities[p] = float("inf")
             # initialize variables to track the best pair and its smallest priority
@@ -173,10 +173,10 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
             # result in an inf for every single pair, and the min will be
             # just the first pair in the list, arbitrarily
             # we can detect this terminating case by a membership check
-            if pair not in self.merges:
+            if pair not in self.token_merges:
                 break # nothing else can be merged anymore
             # otherwise let's merge the best pair (lowest merge index)
-            idx: int = self.merges[pair]
+            idx: int = self.token_merges[pair]
             ids: list[int] = self._merge(ids, pair, idx)
         return ids
     
