@@ -1,5 +1,6 @@
 """ Small GPT-4 style wrapper on the Regex implementation."""
 
+import os
 from types import MappingProxyType
 
 import tiktoken
@@ -166,8 +167,61 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
                 break
             if min_idx is None:
                 raise ValueError("Expected min_idx to be set, got None")    
-            parts = parts[:min_idx] + [parts[min_idx] + parts[min_idx + 1]] + parts[min_idx + 2:]
+            left_part = parts[:min_idx]  # Everything before the pair to merge
+            merged_pair = parts[min_idx] + parts[min_idx + 1]  # Combine the two parts into one
+            right_part = parts[min_idx + 2:]  # Everything after the pair
+            parts = left_part + [merged_pair] + right_part  # Rebuild the list
         return parts
+    
+    def _save_model_file(self, save_dir: str, file_prefix: str) -> None:
+        """Save the model file (critical for load())."""
+        # --- Sanity check ---
+        if not os.path.isdir(save_dir):
+            raise FileNotFoundError(f"Directory does not exist: {save_dir}")
+        model_file_prefix: str = file_prefix + ".model"
+        model_file: str = os.path.join(save_dir, model_file_prefix)
+        with open(model_file, 'w', encoding='utf-8') as f:
+            f.write("minbpe v1\n")
+            f.write(f"{self.source}\n")
+            # write special tokens
+            f.write(f"{len(self.special_tokens)}\n")
+            for special, idx in self.special_tokens.items():
+                f.write(f"{special} {idx}\n")
+            # write token merges
+            for idx1, idx2 in self.token_merges:
+                f.write(f"{idx1} {idx2}\n")
+    
+    def _save_vocab_file(self, save_dir: str, file_prefix: str) -> None:
+        # just for visualization purposes let's output the GPT-4 tokens
+        # in the exact same format as the base class would.
+        # simple run as:
+        # python -c "from minbpe import GPT4Tokenizer; GPT4Tokenizer().save_vocab('gpt4', gpt4_file')"
+        # build vocab being mindful of the byte shuffle
+        # --- Sanity check ---
+        if not os.path.isdir(save_dir):
+            raise FileNotFoundError(f"Directory does not exist: {save_dir}")
+        vocab_file_prefix: str = file_prefix + ".vocab"
+        vocab_file: str = os.path.join(save_dir, vocab_file_prefix)
+        vocab: dict[int, bytes] = {}
+        for idx in range(256):
+            byte_representation: bytes = bytes([self.inverse_byte_shuffle[idx]])
+            self.vocab[idx] = byte_representation
+        for (p0, p1), idx in self.merges.items():
+            vocab[idx] = vocab[p0] + vocab[p1]
+        # now merge the shuffled bytes and write to file
+        inverted_merges: dict[int, tuple[int, int]] = {}
+        for pair, idx in self.merges.items():
+            inverted_merges[idx] = pair
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            for idx, token in vocab.items():
+                token_string: str = self._render_token(token)
+                if idx in inverted_merges:
+                    idx0, idx1 = inverted_merges[idx]
+                    token_pair_1 = self._render_token(vocab[idx0])
+                    token_pair_2 = self._render_token(vocab[idx1])
+                    f.write(f"[{token_pair_1}][{token_pair_2}] -> [{token_string}] {idx}\n")
+                else:
+                    f.write(f"[{token_string}] {idx}\n")
     
 
 

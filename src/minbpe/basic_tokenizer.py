@@ -25,18 +25,15 @@ class BasicTokenizer(BaseTokenizer):
             # count up the number of times every consecutive pair appears
             stats: dict[tuple[int, int], int] = self._get_stats(ids)
             # find the pair with the highest count
-            most_frequent_pair: tuple[int, int] = None
-            highest_count: int = -1
-            for pair, count in stats.items():
-                if count > highest_count:
-                    highest_count = count
-                    most_frequent_pair = pair
-            pair: tuple[int, int] = most_frequent_pair
-            if highest_count == 0:
+            most_frequent_pair: tuple[int, int] | None
+            highest_count: int
+            most_frequent_pair, highest_count = self._get_most_frequent_pair(stats)
+            if highest_count <= 0 or most_frequent_pair is None:
                 # no more pairs can be merged
                 if verbose:
                     print(f"No more pairs can be merged at iteration {i}. Stopping early.")
                 break
+            pair: tuple[int, int] = most_frequent_pair
             # mint a new token: assign it the next available id
             idx: int = 256 + i
             # replace all occurrences of pair in ids with idx
@@ -49,10 +46,10 @@ class BasicTokenizer(BaseTokenizer):
             # prints
             if verbose:
                 print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
-
         # save class variables
         self.token_merges = merges # used in encode()
         self.vocab = vocab   # used in decode()
+
 
     # decode method to convert token ids back to string
     def decode(self, ids: list[int]) -> str:

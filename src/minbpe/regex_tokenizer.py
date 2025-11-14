@@ -71,12 +71,14 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                     else:
                         stats[pair] = count
             # find the pair with the highest count
-            most_frequent_pair: tuple[int, int] = None
-            highest_count: int = -1
-            for pair, count in stats.items():
-                if count > highest_count:
-                    highest_count = count
-                    most_frequent_pair = pair
+            most_frequent_pair: tuple[int, int] | None
+            highest_count: int
+            most_frequent_pair, highest_count = self._get_most_frequent_pair(stats)
+            if highest_count <= 0 or most_frequent_pair is None:
+                # no more pairs can be merged
+                if verbose:
+                    print(f"No more pairs can be merged at iteration {i}. Stopping early.")
+                break
             pair: tuple[int, int] = most_frequent_pair
             # mint a new token: assign it the next available id
             idx: int = 256 + i
@@ -119,7 +121,6 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
         to allow decoding IDs back into their special token strings.
         """
         self.special_tokens = special_tokens
-
         # Initialize an empty dictionary for the inverse mapping
         inv_special_tokens: dict[int, str] = {}
         # Loop through each token and its ID
