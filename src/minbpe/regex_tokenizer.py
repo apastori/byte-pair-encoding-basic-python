@@ -1,5 +1,6 @@
 """Regex Tokenizer implementation."""
 
+import os
 import regex
 from typing import Final, Literal
 from minbpe.base_tokenizer import BaseTokenizer
@@ -251,3 +252,70 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 # this is an ordinary sequence, encode it normally
                 ids.extend(self.encode_ordinary(part))
         return ids
+    
+    def _save_model_file(self, save_dir: str, file_prefix: str) -> None:
+        """Save the model file (critical for load())."""
+        # --- Sanity check ---
+        if not os.path.isdir(save_dir):
+            raise FileNotFoundError(f"Directory does not exist: {save_dir}")
+        model_file_prefix: str = file_prefix + ".model"
+        model_file: str = os.path.join(save_dir, model_file_prefix)
+        with open(model_file, 'w', encoding='utf-8') as f:
+            # name and version
+            f.write("minbpe v1\n")
+            # text source
+            f.write(f"{self.source}\n")
+            # regex pattern
+            f.write(f"{self.pattern}\n")
+            # write special tokens
+            f.write(f"{len(self.special_tokens)}\n")
+            for special, idx in self.special_tokens.items():
+                f.write(f"{special} {idx}\n")
+            # write token merges
+            for idx1, idx2 in self.token_merges:
+                f.write(f"{idx1} {idx2}\n")
+
+    def load(self, model_path: str, model_filename: str) -> None:
+        """Load the values of model file to the tokenizer"""
+        model_full_path: str = os.path.join(model_path, model_filename)
+        # --- Sanity check ---
+        if not model_filename.endswith(".model"):
+            raise ValueError(f"Expected a .model file, got: {model_filename}")
+        if not os.path.exists(model_full_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        # read the model file
+        merges: dict[tuple[int, int], int] = {}
+        special_tokens: dict[str, int] = {}
+        idx: int = 256
+        with open(model_full_path, encoding="utf-8") as f:
+            # read the version
+            version = f.readline().strip()
+            if version != "minbpe v1":
+                raise ValueError(f"Unsupported model version: {version}")
+            # read the source
+            self.source = f.readline().strip()
+            # read the regex pattern
+            self.pattern = f.readline().strip()
+            try:
+                self.compiled_pattern = regex.compile(self.pattern)
+            except regex.error as e:
+                raise ValueError(f"Invalid regex pattern in model file: {e}")
+            # read the number of special tokens
+            num_special_str: str = f.readline().strip()
+            num_special: int = int(num_special_str)
+            for _ in range(num_special):
+                special, special_idx = f.readline().strip().split()
+                special_tokens[special] = int(special_idx)
+            # read the merges
+            for line in f:
+                # Each line should contain two token IDs separated by a space
+                left_token_str, right_token_str = line.strip().split()
+                # Convert both IDs to integers
+                left_token = int(left_token_str)
+                right_token = int(right_token_str)
+                # Register this merge pair with a new token ID
+                merges[(left_token, right_token)] = idx
+                idx += 1
+        self.token_merges = merges
+        self.special_tokens = special_tokens
+        self.vocab = self._build_vocab()

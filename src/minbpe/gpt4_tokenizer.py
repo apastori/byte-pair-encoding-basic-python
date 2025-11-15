@@ -2,7 +2,7 @@
 
 import os
 from types import MappingProxyType
-
+import regex
 import tiktoken
 from minbpe.const_protector import ConstProtector
 from minbpe.regex_tokenizer import RegexTokenizer
@@ -174,19 +174,35 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         return parts
     
     def _save_model_file(self, save_dir: str, file_prefix: str) -> None:
-        """Save the model file (critical for load())."""
-        # --- Sanity check ---
+        """
+        Saves a model file for GPT4Tokenizer that contains:
+            - version stamp
+            - regex split pattern
+            - special tokens
+            - byte shuffle mapping
+            - merges (p0, p1, idx)
+        This file contains everything needed to reconstruct a working GPT4 tokenizer.
+        """
         if not os.path.isdir(save_dir):
             raise FileNotFoundError(f"Directory does not exist: {save_dir}")
         model_file_prefix: str = file_prefix + ".model"
         model_file: str = os.path.join(save_dir, model_file_prefix)
         with open(model_file, 'w', encoding='utf-8') as f:
+            # name and version
             f.write("minbpe v1\n")
+            # text source
             f.write(f"{self.source}\n")
+            # regex pattern
+            f.write(f"{self.pattern}\n")
             # write special tokens
             f.write(f"{len(self.special_tokens)}\n")
             for special, idx in self.special_tokens.items():
                 f.write(f"{special} {idx}\n")
+            # byte shuffle (256 entries)
+            f.write("256\n")
+            for raw_byte in range(256):
+                mapped = self.byte_shuffle[raw_byte]
+                f.write(f"{raw_byte} {mapped}\n")
             # write token merges
             for idx1, idx2 in self.token_merges:
                 f.write(f"{idx1} {idx2}\n")
@@ -222,6 +238,68 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
                     f.write(f"[{token_pair_1}][{token_pair_2}] -> [{token_string}] {idx}\n")
                 else:
                     f.write(f"[{token_string}] {idx}\n")
+
+    def load(self, model_path: str, model_filename: str) -> None:
+        """Load the values of model file to the tokenizer"""
+        model_full_path: str = os.path.join(model_path, model_filename)
+        # --- Sanity check ---
+        if not model_filename.endswith(".model"):
+            raise ValueError(f"Expected a .model file, got: {model_filename}")
+        if not os.path.exists(model_full_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        # read the model file
+        merges: dict[tuple[int, int], int] = {}
+        special_tokens: dict[str, int] = {}
+        idx: int = 256
+        with open(model_full_path, encoding="utf-8") as f:
+            # read the version
+            version = f.readline().strip()
+            if version != "minbpe v1":
+                raise ValueError(f"Unsupported model version: {version}")
+            # read the source
+            self.source = f.readline().strip()
+            # read the regex pattern
+            self.pattern = f.readline().strip()
+            try:
+                self.compiled_pattern = regex.compile(self.pattern)
+            except regex.error as e:
+                raise ValueError(f"Invalid regex pattern in model file: {e}")
+            # read the number of special tokens
+            num_special_str: str = f.readline().strip()
+            num_special: int = int(num_special_str)
+            for _ in range(num_special):
+                special, special_idx = f.readline().strip().split()
+                special_tokens[special] = int(special_idx)
+            # read the byte shuffle mapping
+            num_shuffle = int(f.readline().strip())
+            if num_shuffle != 256:
+                raise ValueError("Expected byte shuffle table of length 256")
+            byte_shuffle: dict[int, int] = {}
+            for _ in range(num_shuffle):
+                raw_str, mapped_str = f.readline().strip().split()
+                raw = int(raw_str)
+                mapped = int(mapped_str)
+                byte_shuffle[raw] = mapped
+            self.byte_shuffle = byte_shuffle
+            # read the inverse byte shuffle mapping
+            inverse: dict[int, int] = {}
+            for raw, mapped in byte_shuffle.items():
+                inverse[mapped] = raw
+            self.inverse_byte_shuffle = inverse
+            # read the merges
+            for line in f:
+                # Each line should contain two token IDs separated by a space
+                left_token_str, right_token_str = line.strip().split()
+                # Convert both IDs to integers
+                left_token = int(left_token_str)
+                right_token = int(right_token_str)
+                # Register this merge pair with a new token ID
+                merges[(left_token, right_token)] = idx
+                idx += 1
+        self.token_merges = merges
+        self.special_tokens = special_tokens
+        # Rebuild vocabulary (uses merges + byte shuffle logic)
+        self.vocab = self._build_vocab()
     
 
 

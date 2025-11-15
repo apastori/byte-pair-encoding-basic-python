@@ -163,7 +163,9 @@ class BaseTokenizer(ABC):
         model_file_prefix: str = file_prefix + ".model"
         model_file: str = os.path.join(save_dir, model_file_prefix)
         with open(model_file, 'w', encoding='utf-8') as f:
+            # name and version
             f.write("minbpe v1\n")
+            # text source
             f.write(f"{self.source}\n")
             # write special tokens
             f.write(f"{len(self.special_tokens)}\n")
@@ -219,8 +221,8 @@ class BaseTokenizer(ABC):
             version = f.readline().strip()
             if version != "minbpe v1":
                 raise ValueError(f"Unsupported model version: {version}")
-            # read the pattern
-            self.pattern = f.readline().strip()
+            # read the source
+            self.source = f.readline().strip()
             # read the number of special tokens
             num_special_str: str = f.readline().strip()
             num_special: int = int(num_special_str)
