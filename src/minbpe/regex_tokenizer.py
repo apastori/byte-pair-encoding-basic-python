@@ -1,14 +1,17 @@
 """Regex Tokenizer implementation."""
 
 import os
-import regex
 from typing import Final, Literal
+
+import regex
+
 from minbpe.base_tokenizer import BaseTokenizer
 from minbpe.const_protector import ConstProtector
 
+
 class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
-     
-     # Constants (by convention, uppercase = constant)
+
+    # Constants (by convention, uppercase = constant)
     _GPT2_SPLIT_PATTERN: Final[str] = (
         r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     )
@@ -17,7 +20,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
         r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
     )
 
-    def __init__(self, pattern: str = None):
+    def __init__(self, pattern: str | None = None) -> None:
         """
         - pattern: optional string to override the default (GPT-4 split pattern)
         - special_tokens: str -> int dictionary of special tokens
@@ -37,48 +40,58 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
 
     def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
         if vocab_size < 256:
-            raise ValueError(f"vocab_size must be at least 256, got {vocab_size}")
+            raise ValueError(
+                f"vocab_size must be at least 256, got {vocab_size}"
+            )
         num_merges: int = vocab_size - 256
 
         # split the text up into text chunks
         text_chunks: list[str] = regex.findall(self.compiled_pattern, text)
         # input text preprocessing
-        ids: list[list[int]] = [] # list of list of integers in range 0..255
+        ids: list[list[int]] = []  # list of list of integers in range 0..255
         for chunk in text_chunks:
             # Convert each chunk (string) into a UTF-8 encoded bytes object
-            chunk_bytes: bytes = chunk.encode("utf-8", errors="strict") # raw bytes
+            chunk_bytes: bytes = chunk.encode(
+                "utf-8", errors="strict"
+            )  # raw bytes
             # Convert the bytes object into a list of integer byte values (0–255)
             chunk_ids: list[int] = list(chunk_bytes)
             # Add the result to the main list
             ids.append(chunk_ids)
         # iteratively merge the most common pairs to create new tokens
-        merges: dict[tuple[int, int], int] = {} # (int, int) -> int
-        vocab: dict[int, bytes] = {} # int -> bytes
-        for idx in range(256):
-            byte_representation: bytes = bytes([idx])
-            vocab[idx] = byte_representation
+        merges: dict[tuple[int, int], int] = {}  # (int, int) -> int
+        vocab: dict[int, bytes] = {}  # int -> bytes
+        for vocab_idx in range(256):
+            byte_representation: bytes = bytes([vocab_idx])
+            vocab[vocab_idx] = byte_representation
         for i in range(num_merges):
             # count the number of times every consecutive pair appears
             stats: dict[tuple[int, int], int] = {}
             for chunk_ids in ids:
                 # passing in stats will update it in place, adding up counts
-                chunk_stats: dict[tuple[int, int], int] = self._get_stats(chunk_ids)
+                chunk_stats: dict[tuple[int, int], int] = self._get_stats(
+                    chunk_ids
+                )
                 # Merge the chunk's stats into the global stats dictionary
-                for pair, count in chunk_stats.items():
+                for stat_pair, count in chunk_stats.items():
                     # If this pair already exists in the global dictionary, add to its count
-                    if pair in stats:
-                        stats[pair] += count
+                    if stat_pair in stats:
+                        stats[stat_pair] += count
                     # Otherwise, start counting this pair from this chunk's count
                     else:
-                        stats[pair] = count
+                        stats[stat_pair] = count
             # find the pair with the highest count
             most_frequent_pair: tuple[int, int] | None
             highest_count: int
-            most_frequent_pair, highest_count = self._get_most_frequent_pair(stats)
+            most_frequent_pair, highest_count = self._get_most_frequent_pair(
+                stats
+            )
             if highest_count <= 0 or most_frequent_pair is None:
                 # no more pairs can be merged
                 if verbose:
-                    print(f"No more pairs can be merged at iteration {i}. Stopping early.")
+                    print(
+                        f"No more pairs can be merged at iteration {i}. Stopping early."
+                    )
                 break
             pair: tuple[int, int] = most_frequent_pair
             # mint a new token: assign it the next available id
@@ -100,11 +113,13 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
             vocab[idx] = left_token + right_token
             # prints
             if verbose:
-                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
+                print(
+                    f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]!r}) had {stats[pair]} occurrences"
+                )
 
         # save class variables
-        self.token_merges = merges # used in encode()
-        self.vocab = vocab   # used in decode()
+        self.token_merges = merges  # used in encode()
+        self.vocab = vocab  # used in decode()
 
     def register_special_tokens(self, special_tokens: dict[str, int]) -> None:
         """
@@ -118,7 +133,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                         "<|pad|>": 100258
                     }
 
-        This method also creates an inverse mapping (int -> str) 
+        This method also creates an inverse mapping (int -> str)
         to allow decoding IDs back into their special token strings.
         """
         self.special_tokens = special_tokens
@@ -138,13 +153,15 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 part_bytes.append(self.vocab[idx])
             elif idx in self.inverse_special_tokens:
                 special_token_str: str = self.inverse_special_tokens[idx]
-                part_bytes.append(special_token_str.encode("utf-8", errors="strict"))
+                part_bytes.append(
+                    special_token_str.encode("utf-8", errors="strict")
+                )
             else:
                 raise ValueError(f"invalid token id: {idx}")
         text_bytes: bytes = b"".join(part_bytes)
         text: str = text_bytes.decode("utf-8", errors="replace")
         return text
-    
+
     def _encode_chunk(self, text_bytes: bytes) -> list[int]:
         # return the token ids
         # let's begin. first, convert all bytes to integers in range 0..255
@@ -162,7 +179,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 else:
                     pair_priorities[p] = float("inf")
             # initialize variables to track the best pair and its smallest priority
-            best_pair: tuple[int, int] = None
+            best_pair: tuple[int, int] | None = None
             best_priority: float | int = float("inf")
             # find the pair with the smallest merge index ---
             for p in pair_priorities:
@@ -170,18 +187,22 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 if priority < best_priority:
                     best_priority = priority
                     best_pair = p
+            if best_pair is None:
+                # No pairs to merge
+                break
             pair: tuple[int, int] = best_pair
             # subtle: if there are no more merges available, the key will
             # result in an inf for every single pair, and the min will be
             # just the first pair in the list, arbitrarily
             # we can detect this terminating case by a membership check
             if pair not in self.token_merges:
-                break # nothing else can be merged anymore
+                break  # nothing else can be merged anymore
             # otherwise let's merge the best pair (lowest merge index)
             idx: int = self.token_merges[pair]
-            ids: list[int] = self._merge(ids, pair, idx)
+            merged_ids: list[int] = self._merge(ids, pair, idx)
+            ids: list[int] = merged_ids  # type: ignore[no-redef]
         return ids
-    
+
     def encode_ordinary(self, text: str) -> list[int]:
         """Encoding that ignores any special tokens."""
         # split text into chunks of text by categories defined in regex pattern
@@ -189,12 +210,20 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
         # all chunks of text are encoded separately, then results are joined
         ids: list[int] = []
         for chunk in text_chunks:
-            chunk_bytes: bytes = chunk.encode("utf-8", errors="strict") # raw bytes
+            chunk_bytes: bytes = chunk.encode(
+                "utf-8", errors="strict"
+            )  # raw bytes
             chunk_ids: list[int] = self._encode_chunk(chunk_bytes)
             ids.extend(chunk_ids)
         return ids
-    
-    def encode(self, text: str, allowed_special: Literal["all", "none", "none_raise"] | set[str] = "none_raise") -> list[int]:
+
+    def encode(
+        self,
+        text: str,
+        allowed_special: (
+            Literal["all", "none", "none_raise"] | set[str]
+        ) = "none_raise",
+    ) -> list[int]:
         """
         Unlike encode_ordinary, this function handles special tokens.
         allowed_special: can be "all"|"none"|"none_raise" or a custom set of special tokens
@@ -203,7 +232,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
         any other behavior is either annoying, or a major footgun
         """
         # decode the user desire w.r.t. handling of special tokens
-        special: dict[str, int] = None
+        special: dict[str, int] | None = None
         if allowed_special == "all":
             special = self.special_tokens
         elif allowed_special == "none":
@@ -212,16 +241,25 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
             special = {}
             for token in self.special_tokens:
                 if token in text:
-                    raise ValueError(f"special token {token} found in text, but allowed_special='none_raise'")
+                    raise ValueError(
+                        f"special token {token} found in text, but allowed_special='none_raise'"
+                    )
         elif isinstance(allowed_special, set):
             # Iterate over each key (k) and value (v) in all available special tokens
-            for k_special_token, v_special_token in self.special_tokens.items():
+            if special is None:
+                special = {}
+            for (
+                k_special_token,
+                v_special_token,
+            ) in self.special_tokens.items():
                 # Check if the key (e.g., "<|endoftext|>", "<|user|>", etc.)
                 # is present in the user-provided 'allowed_special' set
                 if k_special_token in allowed_special:
                     special[k_special_token] = v_special_token
         else:
-            raise ValueError(f"allowed_special={allowed_special} not understood")
+            raise ValueError(
+                f"allowed_special={allowed_special} not understood"
+            )
         if not special:
             # shortcut: if no special tokens, just use the ordinary encoding
             return self.encode_ordinary(text)
@@ -252,7 +290,7 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
                 # this is an ordinary sequence, encode it normally
                 ids.extend(self.encode_ordinary(part))
         return ids
-    
+
     def _save_model_file(self, save_dir: str, file_prefix: str) -> None:
         """Save the model file (critical for load())."""
         # --- Sanity check ---
@@ -299,7 +337,9 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
             try:
                 self.compiled_pattern = regex.compile(self.pattern)
             except regex.error as e:
-                raise ValueError(f"Invalid regex pattern in model file: {e}")
+                raise ValueError(
+                    f"Invalid regex pattern in model file: {e}"
+                ) from e
             # read the number of special tokens
             num_special_str: str = f.readline().strip()
             num_special: int = int(num_special_str)

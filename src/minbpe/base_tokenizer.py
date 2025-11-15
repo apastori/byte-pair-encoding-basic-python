@@ -4,6 +4,7 @@ import os
 import unicodedata
 from abc import ABC, abstractmethod
 
+
 class BaseTokenizer(ABC):
     """Abstract Base class for Tokenizers."""
 
@@ -123,18 +124,20 @@ class BaseTokenizer(ABC):
         safe_string: str = self._replace_control_characters(decoded)
         return safe_string
 
-    def _get_most_frequent_pair(self, stats: dict[tuple[int, int], int]) -> tuple[tuple[int, int] | None, int]:
+    def _get_most_frequent_pair(
+        self, stats: dict[tuple[int, int], int]
+    ) -> tuple[tuple[int, int] | None, int]:
         """Find the pair with the highest count in stats.
-        
+
         Args:
             stats: Dictionary mapping pairs to their occurrence counts
-            
+
         Returns:
             A tuple of (most_frequent_pair, highest_count)
             - most_frequent_pair: The pair with highest count, or None if stats is empty
             - highest_count: The count of that pair (or -1 if stats is empty)
         """
-        most_frequent_pair: tuple[int, int] = None
+        most_frequent_pair: tuple[int, int] | None = None
         highest_count: int = -1
         for pair, count in stats.items():
             if count > highest_count:

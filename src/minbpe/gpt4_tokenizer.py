@@ -1,12 +1,16 @@
-""" Small GPT-4 style wrapper on the Regex implementation."""
+"""Small GPT-4 style wrapper on the Regex implementation."""
 
 import os
+from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Final
+
 import regex
 import tiktoken
+
 from minbpe.const_protector import ConstProtector
 from minbpe.regex_tokenizer import RegexTokenizer
-from typing import Final
+
 
 class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
     """GPT-4 style tokenizer implementation based on RegexTokenizer.
@@ -15,20 +19,22 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
     modification of these constants via the ConstProtector metaclass.
     """
 
-    _GPT4_SPLIT_PATTERN: Final[str] = (
+    _GPT4_SPLIT_PATTERN_REGEX: Final[str] = (
         r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
     )
 
-    _GPT4_SPECIAL_TOKENS: Final[dict[str, int]] = MappingProxyType({
-        '<|endoftext|>': 100257,
-        '<|fim_prefix|>': 100258,
-        '<|fim_middle|>': 100259,
-        '<|fim_suffix|>': 100260,
-        '<|endofprompt|>': 100276
-    })
+    _GPT4_SPECIAL_TOKENS: Final[Mapping[str, int]] = MappingProxyType(
+        {
+            '<|endoftext|>': 100257,
+            '<|fim_prefix|>': 100258,
+            '<|fim_middle|>': 100259,
+            '<|fim_suffix|>': 100260,
+            '<|endofprompt|>': 100276,
+        }
+    )
 
-    def __init__(self):
-        super().__init__(pattern=GPT4Tokenizer._GPT4_SPLIT_PATTERN)
+    def __init__(self) -> None:
+        super().__init__(pattern=GPT4Tokenizer._GPT4_SPLIT_PATTERN_REGEX)
         # get the official tokenizer and its merges
         enc: tiktoken.Encoding = tiktoken.get_encoding("cl100k_base")
         mergeable_ranks: dict[bytes, int] = enc._mergeable_ranks
@@ -40,7 +46,7 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         # build inverse byte shuffle mapping due to historical error in tiktoken
         self.inverse_byte_shuffle = self._build_inverse_byte_shuffle()
         # register special tokens
-        self.register_special_tokens(GPT4Tokenizer._GPT4_SPECIAL_TOKENS)
+        self.register_special_tokens(dict(GPT4Tokenizer._GPT4_SPECIAL_TOKENS))
 
     # Private method to build the vocabulary
     def _build_vocab(self) -> dict[int, bytes]:
@@ -62,16 +68,18 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         for special, idx in self.special_tokens.items():
             vocab[idx] = special.encode(encoding='utf-8', errors='strict')
         return vocab
-    
+
     # create byte shuffle mapping for correct order single byte,
     # historical error with tiktoken with the ascii order of bytes
-    def _build_byte_shuffle(self, ranks_tiktoken: dict[bytes, int]) -> dict[int, int]:
+    def _build_byte_shuffle(
+        self, ranks_tiktoken: dict[bytes, int]
+    ) -> dict[int, int]:
         byte_shuffle: dict[int, int] = {}
         for i in range(256):
             byte_representation: bytes = bytes([i])
             byte_shuffle[i] = ranks_tiktoken[byte_representation]
         return byte_shuffle
-    
+
     # create inverse shuffle mapping for correct order single byte,
     # historical error with tiktoken with the ascii order of bytes
     def _build_inverse_byte_shuffle(self) -> dict[int, int]:
@@ -88,7 +96,7 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
             vocab_entry: bytes = self.vocab[idx]
             text_bytes_parts.append(vocab_entry)
         text_bytes: bytes = b"".join(text_bytes_parts)
-         # Step 2: apply inverse byte shuffle
+        # Step 2: apply inverse byte shuffle
         shuffled_bytes: list[int] = []
         for b in text_bytes:
             inverse_b: int = self.inverse_byte_shuffle[b]
@@ -98,9 +106,9 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         return text
 
     # this is a pretrained tokenizer, it is not intended to be trained
-    def train(self, text: str, vocab_size: int, verbose=False) -> None:
+    def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
         raise NotImplementedError
-    
+
     def _encode_chunk(self, text_bytes: bytes) -> list[int]:
         # before we start processing bytes, we have to permute them
         # Step 1: apply byte shuffle permutation
@@ -108,11 +116,13 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         for b in text_bytes:
             shuffled_value: int = self.byte_shuffle[b]
             shuffled_bytes_list.append(shuffled_value)
-        text_bytes: bytes = bytes(shuffled_bytes_list)
-        ids: list[int] = super()._encode_chunk(text_bytes)
+        shuffled_text_bytes: bytes = bytes(shuffled_bytes_list)
+        ids: list[int] = super()._encode_chunk(shuffled_text_bytes)
         return ids
 
-    def _recover_merges(self, mergeable_ranks: dict[bytes, int]) -> dict[tuple[int, int], int]:
+    def _recover_merges(
+        self, mergeable_ranks: dict[bytes, int]
+    ) -> dict[tuple[int, int], int]:
         # the `merges` are already the byte sequences in their merged state.
         # so we have to recover the original pairings. We can do this by doing
         # a small BPE training run on all the tokens, in their order.
@@ -123,18 +133,28 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
             if len(token) == 1:
                 # skip raw bytes, this is only for merged tokens
                 continue
-            bpe_pair: list[bytes] = self._byte_pair_encoding(mergeable_ranks, token, max_rank=rank)
+            bpe_pair: list[bytes] = self._byte_pair_encoding(
+                mergeable_ranks, token, max_rank=rank
+            )
             if len(bpe_pair) != 2:
-                raise ValueError(f"Expected pair to have exactly 2 elements, got {len(pair)}")
-            pair: tuple[bytes, bytes] = tuple(bpe_pair)
+                raise ValueError(
+                    f"Expected pair to have exactly 2 elements, got {len(bpe_pair)}"
+                )
+            byte1, byte2 = bpe_pair
+            pair: tuple[bytes, bytes] = (byte1, byte2)
             # recover the integer ranks of the pair
             ix0: int = mergeable_ranks[pair[0]]
             ix1: int = mergeable_ranks[pair[1]]
             ranks: tuple[int, int] = (ix0, ix1)
             merges[ranks] = rank
         return merges
-    
-    def _byte_pair_encoding(self, mergeable_ranks: dict[bytes, int], token: bytes, max_rank: int | None = None) -> list[bytes]:
+
+    def _byte_pair_encoding(
+        self,
+        mergeable_ranks: dict[bytes, int],
+        token: bytes,
+        max_rank: int | None = None,
+    ) -> list[bytes]:
         """
         Reconstructs how a byte token would be split (or merged) according to
         the Byte Pair Encoding (BPE) ranks.
@@ -163,16 +183,20 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
                 if rank is not None and (min_rank is None or rank < min_rank):
                     min_idx = i
                     min_rank = rank
-            if min_rank is None or (max_rank is not None and min_rank >= max_rank):
+            if min_rank is None or (
+                max_rank is not None and min_rank >= max_rank
+            ):
                 break
             if min_idx is None:
-                raise ValueError("Expected min_idx to be set, got None")    
+                raise ValueError("Expected min_idx to be set, got None")
             left_part = parts[:min_idx]  # Everything before the pair to merge
-            merged_pair = parts[min_idx] + parts[min_idx + 1]  # Combine the two parts into one
-            right_part = parts[min_idx + 2:]  # Everything after the pair
+            merged_pair = (
+                parts[min_idx] + parts[min_idx + 1]
+            )  # Combine the two parts into one
+            right_part = parts[min_idx + 2 :]  # Everything after the pair
             parts = left_part + [merged_pair] + right_part  # Rebuild the list
         return parts
-    
+
     def _save_model_file(self, save_dir: str, file_prefix: str) -> None:
         """
         Saves a model file for GPT4Tokenizer that contains:
@@ -206,7 +230,7 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
             # write token merges
             for idx1, idx2 in self.token_merges:
                 f.write(f"{idx1} {idx2}\n")
-    
+
     def _save_vocab_file(self, save_dir: str, file_prefix: str) -> None:
         # just for visualization purposes let's output the GPT-4 tokens
         # in the exact same format as the base class would.
@@ -220,13 +244,15 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         vocab_file: str = os.path.join(save_dir, vocab_file_prefix)
         vocab: dict[int, bytes] = {}
         for idx in range(256):
-            byte_representation: bytes = bytes([self.inverse_byte_shuffle[idx]])
+            byte_representation: bytes = bytes(
+                [self.inverse_byte_shuffle[idx]]
+            )
             self.vocab[idx] = byte_representation
-        for (p0, p1), idx in self.merges.items():
+        for (p0, p1), idx in self.token_merges.items():
             vocab[idx] = vocab[p0] + vocab[p1]
         # now merge the shuffled bytes and write to file
         inverted_merges: dict[int, tuple[int, int]] = {}
-        for pair, idx in self.merges.items():
+        for pair, idx in self.token_merges.items():
             inverted_merges[idx] = pair
         with open(vocab_file, "w", encoding="utf-8") as f:
             for idx, token in vocab.items():
@@ -235,7 +261,9 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
                     idx0, idx1 = inverted_merges[idx]
                     token_pair_1 = self._render_token(vocab[idx0])
                     token_pair_2 = self._render_token(vocab[idx1])
-                    f.write(f"[{token_pair_1}][{token_pair_2}] -> [{token_string}] {idx}\n")
+                    f.write(
+                        f"[{token_pair_1}][{token_pair_2}] -> [{token_string}] {idx}\n"
+                    )
                 else:
                     f.write(f"[{token_string}] {idx}\n")
 
@@ -263,7 +291,9 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
             try:
                 self.compiled_pattern = regex.compile(self.pattern)
             except regex.error as e:
-                raise ValueError(f"Invalid regex pattern in model file: {e}")
+                raise ValueError(
+                    f"Invalid regex pattern in model file: {e}"
+                ) from e
             # read the number of special tokens
             num_special_str: str = f.readline().strip()
             num_special: int = int(num_special_str)
@@ -300,6 +330,3 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         self.special_tokens = special_tokens
         # Rebuild vocabulary (uses merges + byte shuffle logic)
         self.vocab = self._build_vocab()
-    
-
-
