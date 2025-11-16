@@ -3,6 +3,7 @@
 import os
 import unicodedata
 from abc import ABC, abstractmethod
+from typing import Literal
 
 
 class BaseTokenizer(ABC):
@@ -38,7 +39,13 @@ class BaseTokenizer(ABC):
         return vocab
 
     @abstractmethod
-    def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
+    def train(
+        self,
+        text: str,
+        vocab_size: int,
+        verbose: bool = False,
+        mode: Literal['text', 'file'] = 'text',
+    ) -> None:
         """Train the tokenizer vocabulary from text."""
         # Tokenizer can train a vocabulary of size vocab_size from text
         raise NotImplementedError

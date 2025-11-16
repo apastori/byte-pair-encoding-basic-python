@@ -38,7 +38,19 @@ class RegexTokenizer(BaseTokenizer, metaclass=ConstProtector):
         # inverse_special_tokens is for decoding
         self.inverse_special_tokens: dict[int, str] = {}
 
-    def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
+    def train(
+        self,
+        text: str,
+        vocab_size: int,
+        verbose: bool = False,
+        mode: Literal['text', 'file'] = 'text',
+    ) -> None:
+        if mode == 'file':
+            try:
+                with open(text, encoding='utf-8') as f:
+                    text = f.read()
+            except FileNotFoundError as e:
+                raise ValueError(f"Error reading file {text}") from e
         if vocab_size < 256:
             raise ValueError(
                 f"vocab_size must be at least 256, got {vocab_size}"

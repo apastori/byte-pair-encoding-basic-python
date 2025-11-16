@@ -3,7 +3,7 @@
 import os
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Final
+from typing import Final, Literal
 
 import regex
 import tiktoken
@@ -106,7 +106,13 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
         return text
 
     # this is a pretrained tokenizer, it is not intended to be trained
-    def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
+    def train(
+        self,
+        text: str,
+        vocab_size: int,
+        verbose: bool = False,
+        mode: Literal['text', 'file'] = 'text',
+    ) -> None:
         raise NotImplementedError
 
     def _encode_chunk(self, text_bytes: bytes) -> list[int]:
