@@ -4,6 +4,7 @@
 # ======================================================
 
 .PHONY: help format format-check lint lint-fix typecheck qa clean install
+.PHONY: run-tests-init
 
 # Default target - show help
 help:
@@ -67,3 +68,9 @@ install:
 	@echo "📦 Installing development dependencies..."
 	pip install -r requirements.txt
 	@echo "✅ Installation complete!"
+
+# Run the test package __init__.py directly (for quick ad-hoc testing)
+run-tests-init:
+	@echo "▶ Running src/tests/__init__.py..."
+	python -u src/tests/__init__.py
+	@echo "✅ Run complete"

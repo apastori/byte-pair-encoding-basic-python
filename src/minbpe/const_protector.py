@@ -22,4 +22,4 @@ class ConstProtector(ABCMeta):
             raise AttributeError(f"Cannot modify constant {name}")
         # if the class variable does not exist, allow setting it
         # I am going to include comment to ignore the next line for the ruff linter
-        super(type, cls).__setattr__(name, value)  # noqa: UP008
+        super().__setattr__(name, value)  # noqa: UP008

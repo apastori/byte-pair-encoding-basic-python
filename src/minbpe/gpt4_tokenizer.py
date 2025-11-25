@@ -85,7 +85,7 @@ class GPT4Tokenizer(RegexTokenizer, metaclass=ConstProtector):
     def _build_inverse_byte_shuffle(self) -> dict[int, int]:
         inverse_byte_shuffle: dict[int, int] = {}
         for k_byte_shuffle, v_byte_shuffle in self.byte_shuffle.items():
-            self.inverse_byte_shuffle[v_byte_shuffle] = k_byte_shuffle
+            inverse_byte_shuffle[v_byte_shuffle] = k_byte_shuffle
         return inverse_byte_shuffle
 
     def decode(self, ids: list[int]) -> str:

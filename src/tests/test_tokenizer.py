@@ -33,7 +33,8 @@ def unpack(text: str) -> str:
     # want to print the entire contents of the file, it creates a mess. So here we go.
     if text.startswith("FILE:"):
         dirname: str = os.path.dirname(os.path.abspath(__file__))
-        file_name: str = os.path.join(dirname, text[5:])
+        input_dir = os.path.join(dirname, "..", "input")
+        file_name: str = os.path.join(input_dir, text[5:])
         contents: str = open(file_name, encoding="utf-8").read()
         return contents
     else:
@@ -140,10 +141,10 @@ tokenizers_test: list[BasicTokenizer | RegexTokenizer] = [
 
 # basic train test
 @pytest.mark.parametrize(
-    "tokenizer_factory", tokenizers_test, ids=["basic", "regex"]
+    "tokenizers_train", tokenizers_test, ids=["basic", "regex"]
 )
 def test_wikipedia_example(
-    tokenizer_test: BasicTokenizer | RegexTokenizer,
+    tokenizers_train: BasicTokenizer | RegexTokenizer,
 ) -> None:
     """
     Quick unit test, following along the Wikipedia example:
@@ -165,11 +166,11 @@ def test_wikipedia_example(
 
     So we expect the output list of ids to be [258, 100, 258, 97, 99]
     """
-    tokenizer: BasicTokenizer | RegexTokenizer = tokenizer_test
+    tokenizer: BasicTokenizer | RegexTokenizer = tokenizers_train
     text: str = "aaabdaaabac"
     tokenizer.train(text, 256 + 3)
     ids: list[int] = tokenizer.encode(text)
-    if ids == [258, 100, 258, 97, 99]:
+    if ids != [258, 100, 258, 97, 99]:
         raise AssertionError(
             f"Tokenizer did not produce expected output.\n"
             f"Original: {text}\n"
@@ -203,10 +204,10 @@ def test_save_load(special_tokens: dict[str, int]) -> None:
     # verify that save/load work as expected
     ids: list[int] = tokenizer.encode(text, "all")
     # save the tokenizer
-    tokenizer.save("output", "test_tokenizer_tmp")
+    tokenizer.save("src/output/", "test_tokenizer_tmp")
     # re-load the tokenizer
     new_tokenizer: RegexTokenizer = RegexTokenizer()
-    new_tokenizer.load("output", "test_tokenizer_tmp.model")
+    new_tokenizer.load("src/output/", "test_tokenizer_tmp.model")
     # verify that decode(encode(x)) == x
     if new_tokenizer.decode(ids) != text:
         raise AssertionError(
@@ -229,8 +230,8 @@ def test_save_load(special_tokens: dict[str, int]) -> None:
         )
     # delete the temporary files
     for file in [
-        "output/test_tokenizer_tmp.model",
-        "output/test_tokenizer_tmp.vocab",
+        "src/output/test_tokenizer_tmp.model",
+        "src/output/test_tokenizer_tmp.vocab",
     ]:
         os.remove(file)
 

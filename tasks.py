@@ -128,3 +128,20 @@ def check_all(c: Context) -> None:
     lint(c)
     typecheck(c)
     print("\n✅ All checks passed!")
+
+
+@task
+def run_tests_init(c: Context) -> None:
+    """Run the `src/tests/__init__.py` file directly for ad-hoc testing.
+
+    This runs the file as a script using the current Python interpreter.
+    Useful for quickly exercising any module-level test code placed in
+    `src/tests/__init__.py` without running the full test suite.
+    """
+    target = Path("src/tests/__init__.py")
+    if not target.exists():
+        print(f"Error: {target} not found. Nothing to run.")
+        return
+    print(f"▶ Running {target} with {sys.executable}...")
+    c.run(f"{sys.executable} -u {target}")
+    print("✅ Finished running tests init file")
